@@ -68,13 +68,13 @@ jobs:
           "
 
       - name: Rename artifact
-        run: mv dist/TgWsProxy.exe dist/TgWsProxy_windows_x64.exe
+        run: mv dist/TgWsProxy.exe dist/TgWsProxy_windows.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: TgWsProxy-windows-x64
-          path: dist/TgWsProxy_windows_x64.exe
+          path: dist/TgWsProxy_windows.exe
 
   build-windows-arm64:
     runs-on: windows-11-arm
@@ -538,7 +538,7 @@ jobs:
             > Не можете скачать?
             > Добавьте `185.199.109.133 release-assets.githubusercontent.com` в hosts или воспользуйтесь зеркалом: https://sourceforge.net/projects/tg-ws-proxy.mirror/files/
           files: |
-            dist/TgWsProxy_windows_x64.exe
+            dist/TgWsProxy_windows.exe
             dist/TgWsProxy_windows_arm64.exe
             dist/TgWsProxy_windows_7_64bit.exe
             dist/TgWsProxy_windows_7_32bit.exe
