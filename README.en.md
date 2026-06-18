@@ -15,7 +15,13 @@ The original project requires configuring SOCKS5/HTTP/MTProto proxy settings in 
 * **"Leaving Home" UX Issue:** Since the proxy runs on an external home server, the local IP address configured in Telegram (e.g., `192.168.0.24`) is only reachable within your home network. When you leave the house and switch to cellular networks (LTE/5G), the local proxy becomes unavailable. Telegram hangs on connecting, requiring you to manually disable the proxy in settings.
 * **iOS Background Mode Issues:** Telegram on iOS often handles manually configured proxies poorly in the background, leading to push notification delays and slow reconnection times when opening the app.
 
-`tg-re-proxy` runs directly on the gateway. Proxy settings on client devices remain **disabled** (Zero-config). The gateway transparently intercepts outgoing Telegram TCP connections, parses the Obfuscated2 handshake to identify the target Datacenter (DC), and routes the traffic as follows:
+### Advantages of `tg-re-proxy`
+`tg-re-proxy` eliminates these limitations by operating in **transparent proxy mode** at the network gateway:
+* **Zero-config on Clients:** Proxy settings inside Telegram are completely disabled. At home, traffic is intercepted by the gateway automatically; outside home (LTE/5G), devices connect directly without toggling settings.
+* **Native iOS Integration:** The iOS operating system treats the connection as direct. Telegram connects instantly in the background without push notification delays.
+* **Happy Eyeballs Bypass:** Blocking Telegram's IPv6 ranges at the gateway forces iOS clients to fall back to IPv4, ensuring successful traffic interception.
+
+The gateway transparently intercepts outgoing Telegram TCP connections, parses the Obfuscated2 handshake to identify the target Datacenter (DC), and routes the traffic as follows:
 * **DC 2, 4:** Directly to Telegram's official WebSocket gateways (e.g., `wss://kws2.web.telegram.org/apiws`).
 * **DC 1, 3, 5:** Through a personal Cloudflare Worker (to bypass blocked DC IP addresses).
 
