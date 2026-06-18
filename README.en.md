@@ -10,14 +10,14 @@ A fork of the original [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy), a
 
 ## ❓ Differences from Original tg-ws-proxy
 
-The original project requires configuring SOCKS5/HTTP/MTProto proxy settings in the Telegram client on each device. This leads to several issues:
-* **Inability to Install on iOS/iPadOS:** Unlike Android (via Termux) or PC, iOS restrictions make it impossible to run the proxy server locally on the device. The only option is to run it on an external device (e.g., Raspberry Pi).
-* **"Leaving Home" UX Issue:** Since the proxy runs on an external home server, the local IP address configured in Telegram (e.g., `192.168.0.24`) is only reachable within your home network. When you leave the house and switch to cellular networks (LTE/5G), the local proxy becomes unavailable. Telegram hangs on connecting, requiring you to manually disable the proxy in settings.
-* **iOS Background Mode Issues:** Telegram on iOS often handles manually configured proxies poorly in the background, leading to push notification delays and slow reconnection times when opening the app.
+The original project requires configuring SOCKS5/HTTP/MTProto proxy settings in the Telegram client on each device. This leads to critical issues:
+1. **Inability to Install on iOS/iPadOS:** Unlike Android (via Termux) or PC, iOS restrictions make it impossible to run the proxy server locally on the device. The only option is to run it on an external device (e.g., Raspberry Pi).
+2. **"Leaving Network" UX Issue:** Since the proxy runs on an external home server, the local IP address configured in Telegram (e.g., `192.168.0.24`) is only reachable within your home network. When you leave the house and switch to cellular networks (LTE/5G), the local proxy becomes unavailable. Telegram hangs on connecting, requiring you to manually disable the proxy in settings.
+3. **iOS Background Mode Issues:** Telegram on iOS often handles manually configured proxies poorly in the background, leading to push notification delays and slow reconnection times when opening the app.
 
 ### Advantages of `tg-re-proxy`
 `tg-re-proxy` eliminates these limitations by operating in **transparent proxy mode** at the network gateway:
-* **Zero-config on Clients:** Proxy settings inside Telegram are completely disabled. At home, traffic is intercepted by the gateway automatically; outside home (LTE/5G), devices connect directly without toggling settings.
+* **Revives Telegram for All LAN Devices with Zero-Config:** Proxy settings inside Telegram are completely disabled on all devices. Traffic from all clients in the home network is intercepted by the gateway automatically and transparently, bypassing blocks. Devices work with Telegram out-of-the-box without any manual setup.
 * **Native iOS Integration:** The iOS operating system treats the connection as direct. Telegram connects instantly in the background without push notification delays.
 * **Happy Eyeballs Bypass:** Blocking Telegram's IPv6 ranges at the gateway forces iOS clients to fall back to IPv4, ensuring successful traffic interception.
 
