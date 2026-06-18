@@ -2,9 +2,9 @@
 
 [Читать на русском](README.md)
 
-**tg-re-proxy** (Telegram Redirect Proxy) is a transparent proxy server designed to intercept and bypass Telegram blocks at the network gateway (router) level, requiring zero configuration on client devices.
+**tg-re-proxy** (Telegram Redirect Proxy) is a versatile transparent proxy server designed to intercept and bypass Telegram blocks at the network gateway level without requiring client device configuration.
 
-A fork of the original [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy), adapted to run in Transparent Proxy mode (via `iptables`/`ufw` redirection) as a standalone script with minimal resource footprint.
+Designed as a lightweight standalone script with a minimal resource footprint, it can be deployed on a **Raspberry Pi (or any single-board computer)**, directly on **compatible routers** (OpenWRT, Keenetic, MikroTik), or on a **personal computer (Linux)** to redirect local or shared network traffic. A fork of the original [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy), adapted to run in Transparent Proxy mode (via `iptables`/`ufw` redirection).
 
 ---
 
