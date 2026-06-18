@@ -11,8 +11,9 @@ A fork of the original [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy), a
 ## ❓ Differences from Original tg-ws-proxy
 
 The original project requires configuring SOCKS5/HTTP/MTProto proxy settings in the Telegram client on each device. This leads to several issues:
-* **"Leaving Home" Issue:** The configured local proxy IP (e.g., `192.168.0.24`) becomes unreachable when switching to cellular networks (LTE/5G) or guest Wi-Fi, requiring manual proxy deactivation in the app.
-* **iOS Behavior:** Running a proxy server locally on iOS is restricted. Manual proxy settings in Telegram on iPhone/iPad frequently cause background push notification delays and connection hangs on *«Updating»*.
+* **Inability to Install on iOS/iPadOS:** Unlike Android (via Termux) or PC, iOS restrictions make it impossible to run the proxy server locally on the device. The only option is to run it on an external device (e.g., Raspberry Pi).
+* **"Leaving Home" UX Issue:** Since the proxy runs on an external home server, the local IP address configured in Telegram (e.g., `192.168.0.24`) is only reachable within your home network. When you leave the house and switch to cellular networks (LTE/5G), the local proxy becomes unavailable. Telegram hangs on connecting, requiring you to manually disable the proxy in settings.
+* **iOS Background Mode Issues:** Telegram on iOS often handles manually configured proxies poorly in the background, leading to push notification delays and slow reconnection times when opening the app.
 
 `tg-re-proxy` runs directly on the gateway. Proxy settings on client devices remain **disabled** (Zero-config). The gateway transparently intercepts outgoing Telegram TCP connections, parses the Obfuscated2 handshake to identify the target Datacenter (DC), and routes the traffic as follows:
 * **DC 2, 4:** Directly to Telegram's official WebSocket gateways (e.g., `wss://kws2.web.telegram.org/apiws`).
