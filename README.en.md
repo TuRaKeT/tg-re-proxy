@@ -235,5 +235,55 @@ sudo ufw reject out to 2a0a:f280::/32
 
 ---
 
+## 📟 Installation Directly on a Router (Without Docker / Raspberry Pi)
+
+Thanks to the zero-dependency design (the script can automatically fallback to using system OpenSSL via `ctypes`), `tg-re-proxy` can be deployed directly on Linux-based routers (OpenWRT, KeeneticOS with Entware, ASUSWRT-Merlin, etc.) without Docker. This saves resources and eliminates the need for a separate single-board computer.
+
+### 1. OpenWRT / Entware-based Routers (Keenetic, ASUS, etc.)
+
+1. Connect to your router via SSH.
+2. Install Python 3 using the package manager (`opkg`):
+   ```bash
+   opkg update
+   opkg install python3-light
+   ```
+3. Download the standalone `transparent.py` script to your router (e.g., to `/opt/bin/` or `/usr/bin/`):
+   ```bash
+   curl -Lo /opt/bin/transparent.py https://raw.githubusercontent.com/TuRaKeT/tg-re-proxy/main/transparent.py
+   chmod +x /opt/bin/transparent.py
+   ```
+4. To run it as a system service, create an init script. For OpenWRT, create `/etc/init.d/tg-re-proxy`:
+   ```bash
+   #!/bin/sh /etc/rc.common
+
+   START=99
+   USE_PROCD=1
+
+   start_service() {
+       procd_open_instance
+       procd_set_param command python3 /opt/bin/transparent.py
+       procd_set_param env TG_RE_PROXY_HOST=0.0.0.0 TG_RE_PROXY_PORT=1444 TG_RE_PROXY_CF_WORKER=your-worker.your-username.workers.dev
+       procd_set_param stdout 1
+       procd_set_param stderr 1
+       procd_set_param respawn
+       procd_close_instance
+   }
+   ```
+   Enable and start the service:
+   ```bash
+   chmod +x /etc/init.d/tg-re-proxy
+   /etc/init.d/tg-re-proxy enable
+   /etc/init.d/tg-re-proxy start
+   ```
+5. Configure `iptables`/`nftables` redirection rules in your router's firewall configuration files.
+
+### 2. MikroTik (RouterOS v7+)
+If your router supports containers (ARM/x86 architecture with the `container` package enabled), you can run `tg-re-proxy` as a RouterOS container:
+1. Pull the container image (or build your own using the repository's Dockerfile).
+2. Configure the container in RouterOS with `TG_RE_PROXY_CF_WORKER` environment variable, exposing port `1444` in `Host` network mode.
+3. Configure traffic redirection under `/ip firewall nat` using `redirect` action to port `1444`.
+
+---
+
 ## ⚖️ License
 This project is licensed under the MIT License, matching the original [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy).

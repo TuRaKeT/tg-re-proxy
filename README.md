@@ -235,5 +235,55 @@ sudo ufw reject out to 2a0a:f280::/32
 
 ---
 
+## 📟 Установка напрямую на роутер (без Docker / Raspberry Pi)
+
+Благодаря отсутствию обязательных внешних зависимостей (скрипт умеет использовать системный OpenSSL через `ctypes`), `tg-re-proxy` можно запустить напрямую на роутерах с операционными системами Linux (OpenWRT, KeeneticOS с Entware, ASUSWRT-Merlin и др.) без использования Docker. Это позволяет сэкономить ресурсы и отказаться от отдельного одноплатного компьютера.
+
+### 1. Роутеры на базе OpenWRT / Entware (Keenetic, ASUS и др.)
+
+1. Подключитесь к роутеру по SSH.
+2. Установите Python 3 (через менеджер пакетов `opkg`):
+   ```bash
+   opkg update
+   opkg install python3-light
+   ```
+3. Скачайте единственный необходимый файл `transparent.py` на роутер (например, в `/opt/bin/` или `/usr/bin/`):
+   ```bash
+   curl -Lo /opt/bin/transparent.py https://raw.githubusercontent.com/TuRaKeT/tg-re-proxy/main/transparent.py
+   chmod +x /opt/bin/transparent.py
+   ```
+4. Для автоматического запуска при старте роутера создайте службу автозапуска. Например, в OpenWRT создайте файл `/etc/init.d/tg-re-proxy`:
+   ```bash
+   #!/bin/sh /etc/rc.common
+
+   START=99
+   USE_PROCD=1
+
+   start_service() {
+       procd_open_instance
+       procd_set_param command python3 /opt/bin/transparent.py
+       procd_set_param env TG_RE_PROXY_HOST=0.0.0.0 TG_RE_PROXY_PORT=1444 TG_RE_PROXY_CF_WORKER=your-worker.your-username.workers.dev
+       procd_set_param stdout 1
+       procd_set_param stderr 1
+       procd_set_param respawn
+       procd_close_instance
+   }
+   ```
+   Разрешите автозапуск службы:
+   ```bash
+   chmod +x /etc/init.d/tg-re-proxy
+   /etc/init.d/tg-re-proxy enable
+   /etc/init.d/tg-re-proxy start
+   ```
+5. Настройте правила перенаправления трафика (`iptables`/`nftables`) в файлах конфигурации брандмауэра вашего роутера.
+
+### 2. MikroTik (RouterOS v7+)
+Если ваш роутер поддерживает контейнеры (архитектура ARM/x86 и включенный пакет `container`), вы можете запустить `tg-re-proxy` в режиме контейнера RouterOS:
+1. Загрузите образ `tg-re-proxy` (или соберите свой на основе Dockerfile репозитория).
+2. Настройте запуск контейнера с переменной окружения `TG_RE_PROXY_CF_WORKER`, пробросив порт `1444` в режиме `Host`.
+3. Настройте перенаправление трафика в `/ip firewall nat` с действием `redirect` на порт `1444`.
+
+---
+
 ## ⚖️ Лицензия
 Этот проект распространяется под лицензией MIT, как и оригинальный [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy).
