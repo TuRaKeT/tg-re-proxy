@@ -151,7 +151,7 @@ export default {
 7. Click **Deploy** in the top-right corner.
 8. Copy the generated worker domain (e.g., `tg-re-proxy.your-username.workers.dev`).
 
-### Step 2. Deploy tg-re-proxy on the Router via Docker Compose
+### Step 2. Deploy tg-re-proxy on the Gateway (Raspberry Pi)
 1. Clone the repository to your gateway device (e.g., Raspberry Pi):
    ```bash
    git clone https://github.com/your-username/tg-re-proxy.git
@@ -185,8 +185,11 @@ export default {
    docker compose up -d --build
    ```
 
-### Step 3. Firewall and Routing Configuration
-Configure network routing on your gateway (Raspberry Pi) to automatically redirect Telegram traffic:
+### Step 3. Firewall and Routing Configuration on the Gateway
+To automatically redirect Telegram traffic from home network clients to the proxy server, configure network routing on the gateway device (in this example, the Raspberry Pi):
+
+> [!NOTE]
+> For home devices (phones, PCs) to route their traffic through this gateway, you must configure your main Wi-Fi Router's DHCP server settings to specify the local IP address of your Raspberry Pi as the **Default Gateway**.
 
 #### 1. Enable IP Forwarding
 Ensure kernel routing is enabled. In `/etc/sysctl.conf`, add or uncomment:
