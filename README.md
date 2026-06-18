@@ -2,78 +2,35 @@
 
 [Read in English](README.en.md)
 
-**tg-re-proxy** (Telegram Redirect Proxy) — это прозрачный прокси-сервер для обхода блокировок Telegram на уровне роутера (например, Raspberry Pi) без необходимости настройки клиентов (мобильных устройств, ПК) в домашней сети.
+**tg-re-proxy** (Telegram Redirect Proxy) — прозрачный прокси-сервер для перехвата и обхода блокировок Telegram на уровне сетевого шлюза (роутера) без настройки клиентских устройств. 
 
-Этот проект является форком оригинального [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy), адаптированным для работы в режиме прозрачного прокси (Transparent Proxy через `iptables`/`ufw` redirect) с минимальным потреблением ресурсов.
-
----
-
-## ❓ Проблематика и преимущества (по сравнению с tg-ws-proxy)
-
-### Ограничения оригинального `tg-ws-proxy`
-Оригинальный прокси `tg-ws-proxy` работает в качестве классического прокси-сервера (SOCKS5/HTTP/MTProto). Чтобы им пользоваться, на **каждом** клиентском устройстве (телефоне, планшете или компьютере) необходимо вручную прописывать адрес прокси в настройках Telegram.
-Это создает критические проблемы с удобством использования (UX):
-1. **Невозможность установки на iOS:** На iPhone/iPad невозможно запустить серверную часть прокси локально на самом устройстве из-за ограничений ОС, поэтому установка на роутер/Pi — единственный выход. Но ручная настройка прокси-клиента в приложении приводит к следующей проблеме.
-2. **UX-катастрофа при выходе из дома:** Когда вы настраиваете MTProto-прокси в Telegram на работу через домашнюю Raspberry Pi (например, по локальному адресу `192.168.0.24`), всё отлично работает, пока вы дома. Но стоит вам выйти на улицу и переключиться на мобильный интернет (LTE/5G) или другой Wi-Fi, локальный адрес Pi становится недоступен. Telegram зависает без подключения. Вам приходится вручную заходить в настройки Telegram и отключать прокси. По возвращении домой процедуру нужно повторять.
-3. **Проблемы с фоновым режимом на iOS:** Telegram в фоновом режиме на iOS часто некорректно работает с прописанными вручную прокси. Это приводит к задержкам push-уведомлений и долгому переподключению при открытии приложения.
-
-### Преимущества `tg-re-proxy`
-`tg-re-proxy` решает эти проблемы за счет работы в режиме **прозрачного проксирования (Transparent Proxy)** на уровне сетевого шлюза (роутера):
-
-1. **Решение проблемы «выхода из дома» (Zero-config на клиенте):** На ваших устройствах в Telegram прокси-сервер **выключен**. 
-   - **Дома:** роутер сам на лету перехватывает трафик Telegram и незаметно проксирует его через WebSocket.
-   - **Вне дома:** мобильное устройство подключается через сотовую сеть напрямую, без каких-либо зависаний и необходимости переключать настройки.
-2. **Идеальная интеграция с iOS:** 
-   - Поскольку прокси работает прозрачно на уровне роутера, операционная система iOS "думает", что работает с Telegram напрямую. В результате Telegram мгновенно подключается, не висит на «Обновлении» и стабильно получает фоновые push-уведомления.
-   - Для обхода механизма **Happy Eyeballs** (когда iOS пытается быстро подключиться по IPv6 в обход IPv4-правил) в нашей схеме настраивается блокировка IPv6-подсетей Telegram на роутере. Это заставляет устройство сделать мягкий откат (fallback) на IPv4, который гарантированно перехватывается и проксируется.
+Форк оригинального [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy), адаптированный для работы в режиме Transparent Proxy (через перенаправление `iptables`/`ufw`) в виде автономного скрипта с минимальным потреблением ресурсов.
 
 ---
 
-## 🛠 Принцип работы
+## ❓ Отличия от оригинального tg-ws-proxy
 
-1. **Перехват трафика:** Сетевой экран роутера (UFW/iptables) перехватывает исходящие TCP-соединения к IP-адресам Telegram на портах `80` и `443` и перенаправляет их на порт прозрачного прокси (по умолчанию `1444`).
-2. **Анализ рукопожатия (Handshake):** Прокси считывает первые 64 байта рукопожатия Obfuscated2, расшифровывает заголовки и определяет тип протокола и целевой дата-центр (DC).
-3. **Разделение пакетов (MsgSplitter):** В отличие от простого TCP-моста, `tg-re-proxy` использует оригинальный парсер `MsgSplitter` для нарезки входящего TCP-потока на исходные транспортные пакеты MTProto (Abridged, Intermediate или Padded). Это критически важно, так как WebSocket-шлюзы Telegram требуют, чтобы каждый WebSocket-кадр содержал ровно один полный пакет MTProto.
-4. **Проксирование через WebSocket:**
-   - Соединения к **DC 2** и **DC 4** проксируются напрямую через оригинальные WebSocket-шлюзы Telegram (например, `wss://kws2.web.telegram.org/apiws`).
-   - Соединения к **DC 1, 3, 5** проксируются через ваш личный **Cloudflare Worker**, чтобы обойти блокировки провайдеров.
+Оригинальный проект требует ручной настройки SOCKS5/HTTP/MTProto прокси в клиенте Telegram на каждом устройстве. Это приводит к проблемам:
+* **Проблема "выхода из дома":** Прописанный локальный IP-адрес прокси (например, `192.168.0.24`) становится недоступен при переключении на мобильную сеть (LTE/5G) или гостевой Wi-Fi. Приходится отключать прокси вручную.
+* **Работа на iOS:** На iPhone/iPad невозможно запустить прокси локально, а ручные настройки прокси в приложении часто приводят к задержке push-уведомлений и зависаниям в статусе *«Обновление» (Updating)* в фоновом режиме.
 
----
-
-## ☁️ Настройка Cloudflare Worker (для DC 1, 3, 5)
-
-По умолчанию провайдеры могут блокировать IP-адреса некоторых дата-центров Telegram. Для обхода этой проблемы трафик к DC 1, 3 и 5 направляется через промежуточный Cloudflare Worker.
-
-### Почему важно использовать собственный (личный) Cloudflare Worker?
-1. **Лимиты бесплатного тарифа (Free Tier Limits):** Бесплатный аккаунт Cloudflare предоставляет лимит в **100 000 запросов в день**. Если использовать один общий воркер на несколько человек, этот лимит будет мгновенно исчерпан, и прокси перестанет работать у всех.
-2. **Конфиденциальность и безопасность:** Маршрутизация трафика через чужой Cloudflare Worker теоретически позволяет владельцу воркера перехватывать метаданные и видеть активность вашего IP (хотя сам трафик Telegram зашифрован с помощью MTProto). Собственный воркер гарантирует полную конфиденциальность.
-3. **Индивидуальная скорость и производительность:** Личный воркер обеспечивает максимальную скорость соединения и отсутствие задержек, так как ресурс выделяется персонально под ваши устройства.
+`tg-re-proxy` работает на уровне сетевого шлюза. Прокси на клиентах **отключен** (Zero-config). Шлюз прозрачно перехватывает TCP-соединения Telegram, парсит рукопожатие Obfuscated2 для определения DC и перенаправляет трафик:
+* **DC 2, 4:** Напрямую в оригинальные WebSocket-шлюзы Telegram (например, `wss://kws2.web.telegram.org/apiws`).
+* **DC 1, 3, 5:** Через персональный Cloudflare Worker (для обхода блокировок IP-адресов DC).
 
 ---
 
-## 🚀 Пошаговая инструкция по установке и настройке
+## ☁️ Cloudflare Worker (для DC 1, 3, 5)
 
-### Шаг 1. Создание и настройка Cloudflare Worker
-1. Войдите в панель [Cloudflare](https://dash.cloudflare.com/).
-2. В левой панели выберите **Compute** ➔ **Workers & Pages**.
-3. Нажмите кнопку **Create application** ➔ **Create Worker**.
-4. Дайте воркеру имя (например, `tg-re-proxy`) и нажмите **Deploy**.
-5. После успешного деплоя нажмите кнопку **Edit code** в верхнем правом углу.
-6. Замените весь код в файле `worker.js` (или `index.js`) на следующий скрипт:
+Используйте **собственный** воркер для избежания лимитов бесплатного тарифа (100k запросов/день) и обеспечения приватности метаданных трафика. Скрипт воркера (требуется поддержка `cloudflare:sockets`):
 
 ```javascript
 import { connect } from "cloudflare:sockets";
 
 function toBytes(data) {
-    if (data instanceof ArrayBuffer) {
-        return new Uint8Array(data);
-    }
-    if (typeof data === "string") {
-        return new TextEncoder().encode(data);
-    }
-    if (data && typeof data.arrayBuffer === "function") {
-        return data.arrayBuffer().then((ab) => new Uint8Array(ab));
-    }
+    if (data instanceof ArrayBuffer) return new Uint8Array(data);
+    if (typeof data === "string") return new TextEncoder().encode(data);
+    if (data && typeof data.arrayBuffer === "function") return data.arrayBuffer().then((ab) => new Uint8Array(ab));
     return new Uint8Array();
 }
 
@@ -82,11 +39,8 @@ export default {
         if ((request.headers.get("Upgrade") || "").toLowerCase() !== "websocket") {
             return new Response("Expected websocket", { status: 426 });
         }
-
         const url = new URL(request.url);
-        if (url.pathname !== "/apiws") {
-            return new Response("Not found", { status: 404 });
-        }
+        if (url.pathname !== "/apiws") return new Response("Not found", { status: 404 });
 
         const dst = url.searchParams.get("dst");
         const pair = new WebSocketPair();
@@ -94,7 +48,6 @@ export default {
         const server = pair[1];
         server.accept();
 
-        // Открываем TCP-соединение прямо из Worker
         const socket = connect({ hostname: dst, port: 443 });
         const tcpReader = socket.readable.getReader();
         const tcpWriter = socket.writable.getWriter();
@@ -103,43 +56,27 @@ export default {
             try {
                 await tcpWriter.write(await toBytes(event.data));
             } catch {
-                try {
-                    server.close(1011, "tcp write failed");
-                } catch {}
+                try { server.close(1011, "tcp write failed"); } catch {}
             }
         });
 
         server.addEventListener("close", async () => {
-            try {
-                await tcpWriter.close();
-            } catch {}
-            try {
-                socket.close();
-            } catch {}
+            try { await tcpWriter.close(); } catch {}
+            try { socket.close(); } catch {}
         });
 
         (async () => {
             try {
                 while (true) {
                     const { value, done } = await tcpReader.read();
-                    if (done) {
-                        break;
-                    }
-                    if (value) {
-                        server.send(value);
-                    }
+                    if (done) break;
+                    if (value) server.send(value);
                 }
             } catch {
             } finally {
-                try {
-                    server.close();
-                } catch {}
-                try {
-                    tcpReader.releaseLock();
-                } catch {}
-                try {
-                    socket.close();
-                } catch {}
+                try { server.close(); } catch {}
+                try { tcpReader.releaseLock(); } catch {}
+                try { socket.close(); } catch {}
             }
         })();
 
@@ -148,63 +85,86 @@ export default {
 };
 ```
 
-7. Нажмите **Deploy** в верхнем правом углу.
-8. Скопируйте полученный адрес воркера (например, `tg-re-proxy.your-username.workers.dev`).
+---
 
-### Шаг 2. Запуск tg-re-proxy на шлюзе (Raspberry Pi)
-1. Клонируйте ваш репозиторий на шлюзовое устройство (например, Raspberry Pi):
-   ```bash
-   git clone https://github.com/ваш-логин/tg-re-proxy.git
-   cd tg-re-proxy
-   ```
-2. Создайте файл `docker-compose.yml` в папке проекта:
-   ```yaml
-   version: '3.8'
+## 🚀 Деплой
 
-   services:
-     tg-re-proxy:
-       build:
-         context: .
-         dockerfile: Dockerfile
-       container_name: tg-re-proxy
-       restart: unless-stopped
-       network_mode: host # Важно для SO_ORIGINAL_DST
-       environment:
-         - TZ=Europe/Moscow
-         - TG_RE_PROXY_HOST=0.0.0.0
-         - TG_RE_PROXY_PORT=1444
-         - TG_RE_PROXY_CF_WORKER=your-worker.your-username.workers.dev # Укажите ваш домен из Шага 1
-       deploy:
-         resources:
-           limits:
-             cpus: '0.5'
-             memory: 256M
-   ```
-3. Запустите контейнер:
-   ```bash
-   docker compose up -d --build
-   ```
+### 1. Запуск через Docker Compose
 
-### Шаг 3. Сетевая настройка маршрутизации (Firewall) на шлюзе
-Чтобы трафик Telegram клиентов домашней сети автоматически перехватывался и направлялся в прокси-сервер, настройки выполняются на устройстве, выполняющем роль сетевого шлюза (Gateway) для вашей локальной сети (в нашем примере это Raspberry Pi):
+```yaml
+version: '3.8'
 
-> [!NOTE]
-> Чтобы домашние устройства (телефоны, ПК) отправляли свой трафик через этот шлюз, в настройках вашего основного Wi-Fi роутера (в параметрах DHCP-сервера) в качестве **Шлюза по умолчанию (Default Gateway)** должен быть указан локальный IP-адрес вашей Raspberry Pi.
+services:
+  tg-re-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tg-re-proxy
+    restart: unless-stopped
+    network_mode: host # Важно для SO_ORIGINAL_DST
+    environment:
+      - TZ=Europe/Moscow
+      - TG_RE_PROXY_HOST=0.0.0.0
+      - TG_RE_PROXY_PORT=1444
+      - TG_RE_PROXY_CF_WORKER=your-worker.your-username.workers.dev # Домен воркера из шага выше
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+```
 
-#### 1. Включение IP Forwarding (в ядре Linux)
-Убедитесь, что разрешена маршрутизация трафика между интерфейсами. В `/etc/sysctl.conf` добавьте или раскомментируйте:
+### 2. Запуск напрямую на роутере (без Docker)
+
+Благодаря автозагрузке OpenSSL (`libcrypto.so`) через `ctypes`, `transparent.py` работает без внешних Python-зависимостей на любом Linux-устройстве.
+
+#### OpenWRT / Entware:
+1. Установите интерпретатор: `opkg update && opkg install python3-light`
+2. Скачайте скрипт: `curl -Lo /opt/bin/transparent.py https://raw.githubusercontent.com/TuRaKeT/tg-re-proxy/main/transparent.py`
+3. Создайте init-скрипт автозапуска `/etc/init.d/tg-re-proxy`:
+```bash
+#!/bin/sh /etc/rc.common
+
+START=99
+USE_PROCD=1
+
+start_service() {
+    procd_open_instance
+    procd_set_param command python3 /opt/bin/transparent.py
+    procd_set_param env TG_RE_PROXY_HOST=0.0.0.0 TG_RE_PROXY_PORT=1444 TG_RE_PROXY_CF_WORKER=your-worker.your-username.workers.dev
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param respawn
+    procd_close_instance
+}
+```
+4. Разрешите запуск: `chmod +x /etc/init.d/tg-re-proxy && /etc/init.d/tg-re-proxy enable && /etc/init.d/tg-re-proxy start`
+
+#### MikroTik (RouterOS v7+ Container):
+1. Импортируйте образ `tg-re-proxy` (собранный на базе Dockerfile из репозитория).
+2. Настройте запуск контейнера в режиме `Host` с пробросом порта `1444` и переменной `TG_RE_PROXY_CF_WORKER`.
+
+---
+
+## 🔒 Настройка маршрутизации и брандмауэра
+
+Настройки применяются на устройстве, выступающем в роли шлюза по умолчанию (Default Gateway) для клиентов локальной сети.
+
+### 1. Системные настройки (sysctl)
+Включите форвардинг пакетов на уровне ядра Linux:
 ```ini
+# /etc/sysctl.conf
 net.ipv4.ip_forward = 1
 ```
-Примените настройки: `sudo sysctl -p`.
+Примените изменения: `sudo sysctl -p`
 
-#### 2. Добавление правил перенаправления в UFW
-Добавьте правила перехвата TCP-трафика к IP-диапазонам Telegram в файл `/etc/ufw/before.rules` в начало файла (перед секцией `*filter`):
+### 2. Правила перенаправления (iptables / UFW)
+Добавьте правила перенаправления TCP-трафика Telegram на локальный порт прокси (`1444`) в файл `/etc/ufw/before.rules` перед секцией `*filter`:
 
 ```text
 *nat
 :PREROUTING ACCEPT [0:0]
-# Перенаправляем трафик Telegram на порт 1444 (tg-re-proxy)
+# Перенаправление Telegram -> tg-re-proxy
 -A PREROUTING -p tcp -d 149.154.160.0/20 --dport 443 -j REDIRECT --to-ports 1444
 -A PREROUTING -p tcp -d 149.154.160.0/20 --dport 80 -j REDIRECT --to-ports 1444
 -A PREROUTING -p tcp -d 91.108.4.0/22 --dport 443 -j REDIRECT --to-ports 1444
@@ -221,10 +181,9 @@ net.ipv4.ip_forward = 1
 -A PREROUTING -p tcp -d 91.105.192.0/23 --dport 80 -j REDIRECT --to-ports 1444
 COMMIT
 ```
-Перезапустите firewall: `sudo ufw reload`.
 
-#### 3. Блокировка IPv6 для Telegram
-Чтобы исключить попытки обхода через IPv6 со стороны мобильных клиентов (протокол Happy Eyeballs), заблокируйте IPv6-диапазоны Telegram:
+### 3. Отключение IPv6 для Telegram
+Чтобы исключить обход прокси через IPv6 (алгоритм Happy Eyeballs на iOS), заблокируйте IPv6-диапазоны Telegram:
 ```bash
 sudo ufw reject out to 2001:b28:f23d::/48
 sudo ufw reject out to 2001:67c:4e8::/48
@@ -232,56 +191,6 @@ sudo ufw reject out to 2001:b28:f23f::/48
 sudo ufw reject out to 2001:b28:f23c::/48
 sudo ufw reject out to 2a0a:f280::/32
 ```
-
----
-
-## 📟 Установка напрямую на роутер (без Docker / Raspberry Pi)
-
-Благодаря отсутствию обязательных внешних зависимостей (скрипт умеет использовать системный OpenSSL через `ctypes`), `tg-re-proxy` можно запустить напрямую на роутерах с операционными системами Linux (OpenWRT, KeeneticOS с Entware, ASUSWRT-Merlin и др.) без использования Docker. Это позволяет сэкономить ресурсы и отказаться от отдельного одноплатного компьютера.
-
-### 1. Роутеры на базе OpenWRT / Entware (Keenetic, ASUS и др.)
-
-1. Подключитесь к роутеру по SSH.
-2. Установите Python 3 (через менеджер пакетов `opkg`):
-   ```bash
-   opkg update
-   opkg install python3-light
-   ```
-3. Скачайте единственный необходимый файл `transparent.py` на роутер (например, в `/opt/bin/` или `/usr/bin/`):
-   ```bash
-   curl -Lo /opt/bin/transparent.py https://raw.githubusercontent.com/TuRaKeT/tg-re-proxy/main/transparent.py
-   chmod +x /opt/bin/transparent.py
-   ```
-4. Для автоматического запуска при старте роутера создайте службу автозапуска. Например, в OpenWRT создайте файл `/etc/init.d/tg-re-proxy`:
-   ```bash
-   #!/bin/sh /etc/rc.common
-
-   START=99
-   USE_PROCD=1
-
-   start_service() {
-       procd_open_instance
-       procd_set_param command python3 /opt/bin/transparent.py
-       procd_set_param env TG_RE_PROXY_HOST=0.0.0.0 TG_RE_PROXY_PORT=1444 TG_RE_PROXY_CF_WORKER=your-worker.your-username.workers.dev
-       procd_set_param stdout 1
-       procd_set_param stderr 1
-       procd_set_param respawn
-       procd_close_instance
-   }
-   ```
-   Разрешите автозапуск службы:
-   ```bash
-   chmod +x /etc/init.d/tg-re-proxy
-   /etc/init.d/tg-re-proxy enable
-   /etc/init.d/tg-re-proxy start
-   ```
-5. Настройте правила перенаправления трафика (`iptables`/`nftables`) в файлах конфигурации брандмауэра вашего роутера.
-
-### 2. MikroTik (RouterOS v7+)
-Если ваш роутер поддерживает контейнеры (архитектура ARM/x86 и включенный пакет `container`), вы можете запустить `tg-re-proxy` в режиме контейнера RouterOS:
-1. Загрузите образ `tg-re-proxy` (или соберите свой на основе Dockerfile репозитория).
-2. Настройте запуск контейнера с переменной окружения `TG_RE_PROXY_CF_WORKER`, пробросив порт `1444` в режиме `Host`.
-3. Настройте перенаправление трафика в `/ip firewall nat` с действием `redirect` на порт `1444`.
 
 ---
 
