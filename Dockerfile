@@ -5,16 +5,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential libffi-dev libssl-dev \
     && python -m venv "$VIRTUAL_ENV" \
     && "$VIRTUAL_ENV/bin/pip" install --upgrade pip setuptools wheel \
-    && "$VIRTUAL_ENV/bin/pip" install cryptography==46.0.5
+    && "$VIRTUAL_ENV/bin/pip" install cryptography==46.0.5 certifi "httpx[http2]==0.28.1"
 
 FROM python:3.12-slim AS runtime
-ENV PATH=/opt/venv/bin:$PATH \
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PATH=/opt/venv/bin:$PATH \
     TG_RE_PROXY_HOST=0.0.0.0 \
     TG_RE_PROXY_PORT=1444 \
+    TG_RE_PROXY_DC_IPS="2:149.154.167.220 4:149.154.167.220" \
     TG_RE_PROXY_CF_WORKER=""
 RUN apt-get update && apt-get install -y --no-install-recommends tini ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
-COPY transparent.py ./
-ENTRYPOINT ["/usr/bin/tini", "--", "/opt/venv/bin/python", "-u", "transparent.py"]
+COPY tg_re_proxy ./tg_re_proxy
+ENTRYPOINT ["/usr/bin/tini", "--", "/opt/venv/bin/python", "-u", "-m", "tg_re_proxy.transparent"]

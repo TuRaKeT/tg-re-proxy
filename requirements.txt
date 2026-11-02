@@ -1,1 +1,3 @@
 cryptography>=42.0.0
+certifi
+httpx[http2]==0.28.1

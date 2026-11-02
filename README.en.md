@@ -1,210 +1,100 @@
 # tg-re-proxy
 
-[Читать на русском](README.md)
+[Русский](README.md)
 
-**tg-re-proxy** is a fork of the original [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy), adapted to run in transparent proxy mode (via `iptables`/`ufw` redirection) as a standalone script with a minimal resource footprint.
+A transparent Telegram transport proxy for Linux gateways, based on
+[tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy). Clients use their normal
+gateway connection; no proxy configuration inside Telegram is required.
 
-It intercepts and bypasses Telegram blocks at the network gateway level, requiring zero configuration on client devices.
+## How it works
 
-### Supported Platforms:
-* **Raspberry Pi** (or any other single-board computer)
-* **Compatible routers** (OpenWRT, Keenetic with Entware, MikroTik RouterOS v7+)
-* **Personal computers (Linux)** (for redirecting local or shared network traffic)
+1. `nftables` or `iptables` redirects a TCP connection to the proxy.
+2. `SO_ORIGINAL_DST` supplies the destination; the Obfuscated2 handshake supplies the DC.
+3. The proxy forwards the stream over Telegram WebSocket, CF transport or TCP fallback.
+4. DC203 is preserved in the MTProto handshake; its WS hostname uses DC2.
 
----
+The proxy replaces **transport obfuscation**, not Telegram's message encryption.
+It reads transport headers to route connections and preserve packet boundaries.
+It does not analyze message or file contents.
 
-## ❓ Differences from Original tg-ws-proxy
+## Privacy
 
-The original project requires configuring SOCKS5/HTTP/MTProto proxy settings in the Telegram client on each device. This leads to critical issues:
-1. **Inability to Install on iOS/iPadOS:** Unlike Android (via Termux) or PC, iOS restrictions make it impossible to run the proxy server locally on the device. The only option is to run it on an external device (e.g., Raspberry Pi).
-2. **"Leaving Network" UX Issue:** Since the proxy runs on an external home server, the local IP address configured in Telegram (e.g., `192.168.0.24`) is only reachable within your home network. When you leave the house and switch to cellular networks (LTE/5G), the local proxy becomes unavailable. Telegram hangs on connecting, requiring you to manually disable the proxy in settings.
-3. **iOS Background Mode Issues:** Telegram on iOS often handles manually configured proxies poorly in the background, leading to push notification delays and slow reconnection times when opening the app.
+- No telemetry, analytics, installation identifiers or reports to the developer.
+- No client, IP address, request, traffic-volume or session-duration logs.
+- No statistics or diagnostic modules, traffic recording mode or files containing
+  user data. `TG_RE_PROXY_DEBUG` does not enable tracking.
+- No background configuration-update requests. CF endpoints are listed in plain
+  text in `tg_re_proxy/config.py` and can be replaced through environment variables.
+- Only active connection state remains in memory: queues, buffer limits and a
+  bounded encrypted-packet buffer for retransmission. These support delivery and
+  are released when the connection closes.
 
-### Advantages of `tg-re-proxy`
-`tg-re-proxy` eliminates these limitations by operating in **transparent proxy mode** at the network gateway:
-* **Revives Telegram for All LAN Devices with Zero-Config:** Proxy settings inside Telegram are completely disabled on all devices. Traffic from all clients in the home network is intercepted by the gateway automatically and transparently, bypassing blocks. Devices work with Telegram out-of-the-box without any manual setup.
-* **Native iOS Integration:** The iOS operating system treats the connection as direct. Telegram connects instantly in the background without push notification delays.
-* **Happy Eyeballs Bypass:** Blocking Telegram's IPv6 ranges at the gateway forces iOS clients to fall back to IPv4, ensuring successful traffic interception.
+Network connections go to Telegram and the selected CF gateways. The optional
+SOCKS relay requires explicit configuration. Those network operators see normal
+transport traffic; the proxy sends no additional usage information. Availability
+depends on the selected gateways.
 
-The gateway transparently intercepts outgoing Telegram TCP connections, parses the Obfuscated2 handshake to identify the target Datacenter (DC), and routes the traffic as follows:
-* **DC 2, 4:** Directly to Telegram's official WebSocket gateways (e.g., `wss://kws2.web.telegram.org/apiws`).
-* **DC 1, 3, 5:** Through a personal Cloudflare Worker (to bypass blocked DC IP addresses).
+## Run
 
----
+Requires Linux, Python 3.12+ and traffic redirection on the gateway.
+The implementation is a package: downloading `transparent.py` alone is insufficient.
 
-## ☁️ Cloudflare Worker (for DC 1, 3, 5)
-
-Deploy your **own** worker to avoid daily free tier limits (100k requests/day) and protect metadata privacy. Worker script (requires `cloudflare:sockets` support):
-
-```javascript
-import { connect } from "cloudflare:sockets";
-
-function toBytes(data) {
-    if (data instanceof ArrayBuffer) return new Uint8Array(data);
-    if (typeof data === "string") return new TextEncoder().encode(data);
-    if (data && typeof data.arrayBuffer === "function") return data.arrayBuffer().then((ab) => new Uint8Array(ab));
-    return new Uint8Array();
-}
-
-export default {
-    async fetch(request) {
-        if ((request.headers.get("Upgrade") || "").toLowerCase() !== "websocket") {
-            return new Response("Expected websocket", { status: 426 });
-        }
-        const url = new URL(request.url);
-        if (url.pathname !== "/apiws") return new Response("Not found", { status: 404 });
-
-        const dst = url.searchParams.get("dst");
-        const pair = new WebSocketPair();
-        const client = pair[0];
-        const server = pair[1];
-        server.accept();
-
-        const socket = connect({ hostname: dst, port: 443 });
-        const tcpReader = socket.readable.getReader();
-        const tcpWriter = socket.writable.getWriter();
-
-        server.addEventListener("message", async (event) => {
-            try {
-                await tcpWriter.write(await toBytes(event.data));
-            } catch {
-                try { server.close(1011, "tcp write failed"); } catch {}
-            }
-        });
-
-        server.addEventListener("close", async () => {
-            try { await tcpWriter.close(); } catch {}
-            try { socket.close(); } catch {}
-        });
-
-        (async () => {
-            try {
-                while (true) {
-                    const { value, done } = await tcpReader.read();
-                    if (done) break;
-                    if (value) server.send(value);
-                }
-            } catch {
-            } finally {
-                try { server.close(); } catch {}
-                try { tcpReader.releaseLock(); } catch {}
-                try { socket.close(); } catch {}
-            }
-        })();
-
-        return new Response(null, { status: 101, webSocket: client });
-    },
-};
+```sh
+git clone https://github.com/TuRaKeT/tg-re-proxy.git
+cd tg-re-proxy
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+python -B transparent.py
 ```
 
----
+Docker:
 
-## 🚀 Deployment
-
-### 1. Run via Docker Compose
-
-```yaml
-version: '3.8'
-
-services:
-  tg-re-proxy:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: tg-re-proxy
-    restart: unless-stopped
-    network_mode: host # Crucial for SO_ORIGINAL_DST
-    environment:
-      - TZ=Europe/Moscow
-      - TG_RE_PROXY_HOST=0.0.0.0
-      - TG_RE_PROXY_PORT=1444
-      - TG_RE_PROXY_CF_WORKER=your-worker.your-username.workers.dev # Your worker domain from the step above
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
+```sh
+docker build -t tg-re-proxy .
+docker run --rm --name tg-re-proxy --network host tg-re-proxy
 ```
 
-### 2. Run Directly on a Router (Without Docker)
+The listener uses TCP port 1444. Transparent interception requires Linux host
+networking to recover the original destination. The program does not install or
+change network rules.
 
-With native OpenSSL (`libcrypto.so`) auto-loading via `ctypes`, `transparent.py` runs with zero external Python dependencies on any Linux-based router.
+## Configuration
 
-#### OpenWRT / Entware:
-1. Install Python: `opkg update && opkg install python3-light`
-2. Download the script: `curl -Lo /opt/bin/transparent.py https://raw.githubusercontent.com/TuRaKeT/tg-re-proxy/main/transparent.py`
-3. Create init.d script `/etc/init.d/tg-re-proxy`:
-```bash
-#!/bin/sh /etc/rc.common
+| Variable | Default / purpose |
+|---|---|
+| `TG_RE_PROXY_HOST` | `0.0.0.0` — listener address |
+| `TG_RE_PROXY_PORT` | `1444` |
+| `TG_RE_PROXY_DC_IPS` | `2:149.154.167.220 4:149.154.167.220` — public Telegram WS gateway addresses |
+| `TG_RE_PROXY_POOL_SIZE` | `4` — WS pool size |
+| `TG_RE_PROXY_BUF_KB` | `256` — socket buffer size in KiB |
+| `TG_RE_PROXY_CFPROXY_DOMAINS` | Custom CF domains replacing the built-in list |
+| `TG_RE_PROXY_CF_WORKER` | Custom worker; unset by default |
+| `TG_RE_PROXY_NO_CFPROXY` | `1` — disable CF fallback |
+| `TG_RE_PROXY_NO_H2` | `1` — disable HTTP/2 media transport |
+| `TG_RE_PROXY_NO_SECURE` | `1` — use unencrypted HTTP for CF transport; TLS is the default |
+| `TG_RE_PROXY_SOCKS` | Unset: non-MTProto relay disabled. Set `HOST:PORT` to enable |
+| `TG_RE_PROXY_FORCE_TEST_DC` | `1` — use test DCs |
 
-START=99
-USE_PROCD=1
+## Gateway integration
 
-start_service() {
-    procd_open_instance
-    procd_set_param command python3 /opt/bin/transparent.py
-    procd_set_param env TG_RE_PROXY_HOST=0.0.0.0 TG_RE_PROXY_PORT=1444 TG_RE_PROXY_CF_WORKER=your-worker.your-username.workers.dev
-    procd_set_param stdout 1
-    procd_set_param stderr 1
-    procd_set_param respawn
-    procd_close_instance
-}
-```
-4. Enable and start: `chmod +x /etc/init.d/tg-re-proxy && /etc/init.d/tg-re-proxy enable && /etc/init.d/tg-re-proxy start`
+Clients must send traffic through the Linux gateway running the proxy. Configure
+TCP redirects for the relevant Telegram networks and ports 80, 443, 5222 to port
+1444. Outgoing connections from the proxy itself must not enter the redirect.
+Account for IPv6 separately if your network provides it.
 
-#### MikroTik (RouterOS v7+ Container):
-1. Import the `tg-re-proxy` image (built using the repository's Dockerfile).
-2. Configure the container in `Host` network mode with port `1444` and `TG_RE_PROXY_CF_WORKER` environment variable.
+Transparent Obfuscated2 transport is supported. UDP calls and arbitrary
+protocols are not automatically converted into WS traffic. Unrecognized
+connections are closed when the optional SOCKS relay is disabled.
 
----
+## Tests
 
-## 🔒 Routing and Firewall Configuration
-
-Apply these rules on the device acting as the Default Gateway for your LAN clients.
-
-### 1. Enable IP Forwarding (Kernel)
-Enable IPv4 packet routing:
-```ini
-# /etc/sysctl.conf
-net.ipv4.ip_forward = 1
-```
-Apply: `sudo sysctl -p`
-
-### 2. Port Redirection (iptables / UFW)
-Append TCP traffic redirection rules to `/etc/ufw/before.rules` before the `*filter` section:
-
-```text
-*nat
-:PREROUTING ACCEPT [0:0]
-# Redirect Telegram traffic to tg-re-proxy
--A PREROUTING -p tcp -d 149.154.160.0/20 --dport 443 -j REDIRECT --to-ports 1444
--A PREROUTING -p tcp -d 149.154.160.0/20 --dport 80 -j REDIRECT --to-ports 1444
--A PREROUTING -p tcp -d 91.108.4.0/22 --dport 443 -j REDIRECT --to-ports 1444
--A PREROUTING -p tcp -d 91.108.4.0/22 --dport 80 -j REDIRECT --to-ports 1444
--A PREROUTING -p tcp -d 91.108.8.0/22 --dport 443 -j REDIRECT --to-ports 1444
--A PREROUTING -p tcp -d 91.108.8.0/22 --dport 80 -j REDIRECT --to-ports 1444
--A PREROUTING -p tcp -d 91.108.56.0/22 --dport 443 -j REDIRECT --to-ports 1444
--A PREROUTING -p tcp -d 91.108.56.0/22 --dport 80 -j REDIRECT --to-ports 1444
--A PREROUTING -p tcp -d 149.154.164.0/22 --dport 443 -j REDIRECT --to-ports 1444
--A PREROUTING -p tcp -d 149.154.164.0/22 --dport 80 -j REDIRECT --to-ports 1444
--A PREROUTING -p tcp -d 194.221.250.0/24 --dport 443 -j REDIRECT --to-ports 1444
--A PREROUTING -p tcp -d 194.221.250.0/24 --dport 80 -j REDIRECT --to-ports 1444
--A PREROUTING -p tcp -d 91.105.192.0/23 --dport 443 -j REDIRECT --to-ports 1444
--A PREROUTING -p tcp -d 91.105.192.0/23 --dport 80 -j REDIRECT --to-ports 1444
-COMMIT
+```sh
+python -B -m unittest discover -s tests
 ```
 
-### 3. Disable IPv6 for Telegram
-To prevent IPv6 traffic from bypassing the proxy (iOS Happy Eyeballs algorithm), reject Telegram's IPv6 subnets:
-```bash
-sudo ufw reject out to 2001:b28:f23d::/48
-sudo ufw reject out to 2001:67c:4e8::/48
-sudo ufw reject out to 2001:b28:f23f::/48
-sudo ufw reject out to 2001:b28:f23c::/48
-sudo ufw reject out to 2a0a:f280::/32
-```
+Tests cover transport encryption and forwarding, DC203, HTTP/2 flow control,
+cancellation and absence of logging. They use synthetic data and a local TLS
+server; no Telegram connection is required.
 
----
-
-## ⚖️ License
-This project is licensed under the MIT License, matching the original [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy).
+MIT license; original implementation by Flowseal/tg-ws-proxy.
